@@ -18,7 +18,6 @@ from starlette.middleware.sessions import SessionMiddleware
 load_dotenv()   
 
 fastapi_key = os.environ.get('FASTAPI_SECRET_KEY')
-slack_token = os.environ.get('SLACK_TOKEN')
 google_client_id = os.environ.get('GOOGLE_CLIENT_ID')
 google_client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
 google_token_url = os.environ.get('GOOGLE_TOKEN_URI')
@@ -87,7 +86,7 @@ async def slack_oauth(request: Request):
     team_id = response.json().get('team').get('id')
 
     # Save the access token in the database
-    redis_conn.r.set(f'team:{team_id}:user:{user_id}:slack_access_token', slack_access_token)
+    redis_conn.r.set(f'team:{team_id}:slack_access_token', slack_access_token)
 
     html_content = """
         <!DOCTYPE html>
@@ -110,9 +109,7 @@ async def index():
 @app.post('/list-events')
 async def list_events(background_tasks: BackgroundTasks, user_id: str = Form(...), team_id: str = Form(...), text: str = Form(default='')):
     auth_stuff = r.get(f'user:{user_id}')
-    slack_token = r.get(f'team:{team_id}:user:{user_id}:slack_access_token')
-    if slack_token is None:
-        return responses.RedirectResponse(url='/slack-authorize')
+    slack_token = r.get(f'team:{team_id}:slack_access_token')
     channel_id = open_dm_channel(user_id, slack_token)
     client = slack.WebClient(token=slack_token)
 
@@ -123,13 +120,25 @@ async def list_events(background_tasks: BackgroundTasks, user_id: str = Form(...
         client.chat_postMessage(channel=channel_id, text=f"Please provide a date range. Valid options are: `today`, `yesterday`, `next_seven_days`, `last_seven_days`")
         return Response(status_code=200)
 
-    # send user a message
-    client.chat_postMessage(channel=channel_id, text=f"Getting events for { text }...")
+    if len(text) == 1 and text[0] not in ['today', 'yesterday', 'next_seven_days', 'last_seven_days']:
+        # Send a message to the user
+        client.chat_postMessage(channel=channel_id, text=f"Please provide a time period. Valid options are: `today`, `yesterday`, `next_seven_days`, `last_seven_days`")
+        return Response(status_code=200)
+    elif len(text) == 2 and text[0] not in ['next', 'last']:
+        # Send a message to the user
+        client.chat_postMessage(channel=channel_id, text=f"Please provide a time period. Valid options are: `next <number of days>`, `last <number of days>`")
+        return Response(status_code=200)
+    elif len(text) == 1 and text[0] in ['today', 'yesterday', 'next_seven_days', 'last_seven_days']:
+        # send user a message
+        client.chat_postMessage(channel=channel_id, text=f"Getting events for { text[0] }...")
+    elif len(text) == 2 and text[0] in ['next', 'last']:
+        # send user a message
+        client.chat_postMessage(channel=channel_id, text=f"Getting events for { text[0] } { text[1] }...")
 
     if auth_stuff is None:
         # Send a message to the user
         client.chat_postMessage(channel=channel_id, text=f"You haven't authorized me yet. Try running `/setup`")
-        return '', 200
+        return Response(status_code=200)
     else:
         background_tasks.add_task(get_events_gcal, user_id, google_token_url, google_client_id, google_client_secret, text, slack_token, auth_stuff, client, channel_id)
 
@@ -141,6 +150,7 @@ async def log_time_in_jira(background_tasks: BackgroundTasks, request: Request):
     payload = json.loads(form_data.get("payload"))
     response_url = payload['response_url']
     action_id = payload['actions'][0]['action_id'].split('|')[0]
+    slack_token = r.get(f'team:{payload["team"]["id"]}:slack_access_token')
     client = slack.WebClient(token=slack_token)
     slack_user_id = payload['user']['id']
     channel_id = open_dm_channel(slack_user_id, slack_token)
@@ -182,7 +192,10 @@ async def testes(request: Request):
     return JSONResponse(content={"challenge": challenge})
 
 @app.post('/setup')
-async def setup(user_id: str = Form(...), channel_id: str = Form(...), text: str = Form(default='')):
+async def setup(user_id: str = Form(...), text: str = Form(default=''), team_id: str = Form(...)):
+
+    slack_token = r.get(f'team:{team_id}:slack_access_token')
+    channel_id = open_dm_channel(user_id, slack_token)
 
     if len(text) == 0:
         # Send a message to the user
@@ -192,7 +205,7 @@ async def setup(user_id: str = Form(...), channel_id: str = Form(...), text: str
 
     # Generate a secure, random state value
     random_state = secrets.token_urlsafe()
-    state = {"state":random_state,"channel":channel_id,"user":user_id, "jira_api_token": text}
+    state = {"state":random_state,"channel":channel_id,"user":user_id, "jira_api_token": text, "slack_token": slack_token}
     encoded_state = urllib.parse.quote(json.dumps(state))
 
     # Set scopes to include in the authorization request
@@ -238,6 +251,9 @@ async def oauth2callback(request: Request):
     # get the user ID from from state
     user_id = state_data.get('user', None)
 
+    # get slack token
+    slack_token = state_data.get('slack_token', None)
+
     # Exchange the authorization code for an access token
     response = requests.post(google_token_url, json={
         'code': code,
@@ -262,6 +278,9 @@ async def oauth2callback(request: Request):
     # Save the access token and email in the database
     redis_conn.r.set(f'user:{user_id}', json.dumps(access_token))
 
+    # open channel
+    channel_id = open_dm_channel(user_id, slack_token)
+
     html_content = """
         <!DOCTYPE html>
         <html>
@@ -276,12 +295,13 @@ async def oauth2callback(request: Request):
 
     # Send a message to the user
     client = slack.WebClient(token=slack_token)
-    client.chat_postMessage(channel=channel_id, text=f"You have been authorized! Try running `/list-todays-events`")
+    client.chat_postMessage(channel=channel_id, text=f"You have been authorized! Try running `/list-events today` or `/list-events yesterday` to get your Google Calendar events. You can also try `/list-events next 3` or `/list-events last 7`")
 
-    return responses.RedirectResponse(url='/slack-authorize')
+    return responses.HTMLResponse(content=html_content, status_code=200)
 
 @app.post('/get-worklogs')
-async def get_worklogs(user_id: str = Form(...), text: str = Form(default='') ):
+async def get_worklogs(user_id: str = Form(...), team_id: str = Form(...),text: str = Form(default='') ):
+    slack_token = r.get(f'team:{team_id}:slack_access_token')
     auth_stuff = r.get(f'user:{user_id}')
     channel_id = open_dm_channel(user_id, slack_token)
     client = slack.WebClient(token=slack_token)
@@ -304,7 +324,8 @@ async def get_worklogs(user_id: str = Form(...), text: str = Form(default='') ):
     return Response(status_code=200)
 
 @app.post('/delete-worklog')
-async def delete_worklog(user_id: str = Form(...), text: str = Form(default='')):
+async def delete_worklog(user_id: str = Form(...), team_id: str = Form(...), text: str = Form(default='')):
+    slack_token = r.get(f'team:{team_id}:slack_access_token')
     auth_stuff = r.get(f'user:{user_id}')
     channel_id = open_dm_channel(user_id, slack_token)
     client = slack.WebClient(token=slack_token)
