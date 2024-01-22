@@ -1,0 +1,88 @@
+{
+    "display_information": {
+        "name": "Jira Worklog Tool",
+        "description": "Link gcal with jira worklogs",
+        "background_color": "#737373"
+    },
+    "features": {
+        "bot_user": {
+            "display_name": "Jira Worklogs Tool",
+            "always_online": true
+        },
+        "slash_commands": [
+            {
+                "command": "/setup",
+                "url": "https://www.iamtomlinton.com/setup",
+                "description": "Setup gcal authentication",
+                "usage_hint": "[jira api token]",
+                "should_escape": false
+            },
+            {
+                "command": "/get-worklogs",
+                "url": "https://www.iamtomlinton.com/get-worklogs",
+                "description": "Get all worklogs for a jira issue",
+                "usage_hint": "[fes-123]",
+                "should_escape": false
+            },
+            {
+                "command": "/delete-worklog",
+                "url": "https://www.iamtomlinton.com/delete-worklog",
+                "description": "Delete a worklog from jira issue",
+                "usage_hint": "[fes-123] [64125]",
+                "should_escape": false
+            },
+            {
+                "command": "/list-events",
+                "url": "https://www.iamtomlinton.com/list-events",
+                "description": "List gcal FES events with custom date range",
+                "usage_hint": "[next/last] [<number of days>]",
+                "should_escape": false
+            }
+        ]
+    },
+    "oauth_config": {
+        "redirect_urls": [
+            "https://www.iamtomlinton.com/slack-oauth"
+        ],
+        "scopes": {
+            "user": [
+                "channels:history",
+                "groups:history",
+                "im:history"
+            ],
+            "bot": [
+                "channels:history",
+                "channels:read",
+                "chat:write",
+                "chat:write.public",
+                "commands",
+                "groups:history",
+                "groups:read",
+                "groups:write",
+                "im:history",
+                "im:read",
+                "im:write",
+                "incoming-webhook",
+                "mpim:write",
+                "users:read"
+            ]
+        }
+    },
+    "settings": {
+        "event_subscriptions": {
+            "request_url": "https://www.iamtomlinton.com/testes",
+            "user_events": [
+                "message.channels",
+                "message.groups",
+                "message.im"
+            ]
+        },
+        "interactivity": {
+            "is_enabled": true,
+            "request_url": "https://www.iamtomlinton.com/log-jira-worklog"
+        },
+        "org_deploy_enabled": false,
+        "socket_mode_enabled": false,
+        "token_rotation_enabled": false
+    }
+}
