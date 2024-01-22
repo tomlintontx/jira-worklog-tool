@@ -162,7 +162,7 @@ async def log_time_in_jira(background_tasks: BackgroundTasks, request: Request):
         background_tasks.add_task(create_worklog,values, slack_user_id, client, channel_id)
         
 
-        response_text = ":white_check_mark: JIRA worklogs have been updated."
+        response_text = "Working on it..."
     elif action_id == 'update_jira_no':
         # Handle 'No' action
         response_text = ":x: JIRA worklogs will not be updated."

@@ -36,8 +36,8 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
     for event in events:
         # check to see if the issue is assigned to the user
         if not is_issue_assigned_to_user(event['jira_key'], slack_user_id):
-            client.chat_postMessage(channel=channel_id, text=f"You are not assigned to {event['jira_key']}. Please assign yourself to the issue and try again or update your google calendar with the correct Jira Key.")
-            return
+            client.chat_postMessage(channel=channel_id, text=f":x: You are not assigned to `{event['jira_key']}`. Please assign yourself to the issue and try again or update your google calendar with the correct Jira Key.")
+            continue
 
         if event.get('jira_worklog_id') is not None:
             update_worklog(event['jira_key'], event['jira_worklog_id'], generate_worklog_entry(event)['worklog_data'], authentication, event['event_id'], client, channel_id)
@@ -64,12 +64,12 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
                 redis_conn.r.hset(f'calEvent:{event["event_id"]}', 'jira_worklog_id', int(worklog_id))
 
                 # send a message to the user
-                client.chat_postMessage(channel=channel_id, text=f"Worklog created successfully for {event['jira_key']}.")
+                client.chat_postMessage(channel=channel_id, text=f":white_check_mark: Worklog created successfully for {event['jira_key']}.")
 
                 print("Worklog created successfully.")
             else:
                 #send a message to the user
-                client.chat_postMessage(channel=channel_id, text=f"Failed to create worklog for {event['jira_key']}. \n Jira responded with: {response.text}")
+                client.chat_postMessage(channel=channel_id, text=f":x: Failed to create worklog for {event['jira_key']}. \n Jira responded with: {response.text}")
                 print("Failed to create worklog.")
                 print("Response:", response.text)
 
@@ -116,7 +116,7 @@ def get_issue_worklogs(issue_key: str, auth_stuff: dict, channel_id: str, client
 
         print(f'Worklogs retrieved successfully. We found {len(worklogs)} worklogs.')
 
-        primer = f"Here are the worklogs for {issue_key}:"
+        primer = f"Here are the worklogs for {issue_key.upper()}:"
         content = f'```{tabulate_dicts(worklogs)}```'
 
         # Send a message to the user
@@ -154,7 +154,7 @@ def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authenti
             redis_conn.r.hset(f'calEvent:{event_id}', key, value)
 
         # send a message to the user
-        client.chat_postMessage(channel=channel_id, text=f"Worklog updated successfully for {issue_key}.")
+        client.chat_postMessage(channel=channel_id, text=f":white_check_mark: Worklog updated successfully for {issue_key}.")
 
         print("Worklog updated successfully.")
     else:
@@ -235,19 +235,26 @@ def is_issue_assigned_to_user(issue_key: str, slack_user_id: str) -> bool:
     auth_stuff = get_auth_from_redis(slack_user_id)
 
     # user email
-    user_email = json.loads(auth_stuff)['user_email']
+    user_email = auth_stuff['user_email']
 
     #api token
-    api_token = json.loads(auth_stuff)['jira_api_token']
+    api_token = auth_stuff['jira_api_token']
+
+    # only return the assignee field
+    fields = 'assignee'
 
     # gather the issue data from jira
     url = f'{jira_url}/rest/api/3/issue/{issue_key}'
     authentication = HTTPBasicAuth(user_email, api_token)
-    response = requests.get(url, headers=headers, auth=authentication)
+    params = {'fields': fields}
+    response = requests.get(url, headers=headers, auth=authentication, params=params)
     res = response.json()
 
+    print(res)
+
     # check if the user is the assignee
-    if res['fields']['assignee']['emailAddress'] == user_email:
-        return True
+    if type(res['fields']['assignee']) == dict:
+        if res['fields']['assignee'].get('emailAddress', None) == user_email:
+            return True
     else:
         return False
