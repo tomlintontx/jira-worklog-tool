@@ -38,6 +38,10 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
         start_date = (datetime.datetime.utcnow() - datetime.timedelta(days=int(date_range[1]))).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
         end_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
 
+    # save the start and end dates to redis by user_id as a hashset
+    r.hset(f'user:{user_id}:dates', 'start_date', start_date)
+    r.hset(f'user:{user_id}:dates', 'end_date', end_date)
+
     auth_stuff = json.loads(auth_stuff) # convert string to dict
 
     service = build('calendar', 'v3', credentials=Credentials(
@@ -76,7 +80,8 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
                 'end': end,
                 'duration': duration.seconds,
                 'jira_key': find_patterns(event['summary'].upper())[0],
-                'event_type': 'calendar'
+                'event_type': 'calendar',
+                'user_id': user_id,
             }
             fes_events.append(cleaned_event)
     
@@ -117,3 +122,10 @@ def store_events(events: list) -> None:
             hash_key = f"calEvent:{event_id}"
             for key, value in event.items():
                 r.hset(hash_key, key, str(value))
+        
+        # store a date index as YYYYMMDD for each event by user_id
+        user_id = event.get("user_id")
+        if user_id:
+            date = event.get("start_str")
+            date_index = datetime.datetime.fromisoformat(date).strftime('%Y%m%d')
+            r.zadd(f'user:{user_id}:calEvents', {event_id: date_index})

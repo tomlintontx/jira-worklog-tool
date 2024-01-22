@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import redis_conn 
 import slack
 from utils import tabulate_dicts, make_date_friendly, get_user_timezone
+import datetime
 
 load_dotenv()
 
@@ -23,14 +24,39 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
 
     auth_stuff = get_auth_from_redis(slack_user_id)
 
+    gcal_event_ids = []
+
     # get calendar events from redis
     events = []
     keys = ['event_id', 'jira_key', 'summary', 'start', 'duration', 'jira_worklog_id']
     for event_id in issue_keys:
         event_data = redis_conn.r.hmget(f'calEvent:{event_id}',keys)
-        events.append(dict(zip(keys, event_data)))
+        structured_event_data = dict(zip(keys, event_data))
+        events.append(structured_event_data)
+        gcal_event_ids.append(event_id)
 
     authentication = HTTPBasicAuth(auth_stuff['user_email'], auth_stuff['jira_api_token'])
+
+    #get the min and max dates form redis
+    min_date = datetime.datetime.fromisoformat(redis_conn.r.hget(f'user:{slack_user_id}:dates', 'start_date')[:-1] + '+00:00')
+    max_date = datetime.datetime.fromisoformat(redis_conn.r.hget(f'user:{slack_user_id}:dates', 'end_date')[:-1] + '+00:00')
+
+
+    # get list of stored events YYYMMDD between start and end from redis
+    stored_events = redis_conn.r.zrangebyscore(f'user:{slack_user_id}:calEvents', min_date.strftime('%Y%m%d'), max_date.strftime('%Y%m%d'))
+
+    # print stored events
+    print(f'stored_events: {stored_events}')
+
+    # compare stored events and gcal events to see if any are missing
+    for event in stored_events:
+        if event not in gcal_event_ids:
+            # delete the worklog and cal event from redis
+            worklog_id = redis_conn.r.hget(f'calEvent:{event}', 'jira_worklog_id')
+            c = redis_conn.r.delete(f'calEvent:{event}')
+            print(f'calEvent:{event} deleted: {c}')
+            redis_conn.r.delete(f'worklog:{worklog_id}')
+            redis_conn.r.zrem(f'user:{slack_user_id}:calEvents', event)
 
     # Make the request
     for event in events:
@@ -258,3 +284,10 @@ def is_issue_assigned_to_user(issue_key: str, slack_user_id: str) -> bool:
             return True
     else:
         return False
+
+def parse_isoformat_with_timezone(dt_str):
+    # Check if the timezone part needs to be adjusted
+    if dt_str[-3] not in [":", "+", "-"]:
+        # Insert a colon in the timezone part
+        dt_str = dt_str[:-2] + ":" + dt_str[-2:]
+    return datetime.datetime.fromisoformat(dt_str)
