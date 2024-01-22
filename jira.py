@@ -34,6 +34,11 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
 
     # Make the request
     for event in events:
+        # check to see if the issue is assigned to the user
+        if not is_issue_assigned_to_user(event['jira_key'], slack_user_id):
+            client.chat_postMessage(channel=channel_id, text=f"You are not assigned to {event['jira_key']}. Please assign yourself to the issue and try again or update your google calendar with the correct Jira Key.")
+            return
+
         if event.get('jira_worklog_id') is not None:
             update_worklog(event['jira_key'], event['jira_worklog_id'], generate_worklog_entry(event)['worklog_data'], authentication, event['event_id'], client, channel_id)
         else:
@@ -57,6 +62,9 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
 
                 # Update the Calendar event with the worklog ID
                 redis_conn.r.hset(f'calEvent:{event["event_id"]}', 'jira_worklog_id', int(worklog_id))
+
+                # send a message to the user
+                client.chat_postMessage(channel=channel_id, text=f"Worklog created successfully for {event['jira_key']}.")
 
                 print("Worklog created successfully.")
             else:
@@ -145,6 +153,9 @@ def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authenti
         for key, value in cal_update.items():
             redis_conn.r.hset(f'calEvent:{event_id}', key, value)
 
+        # send a message to the user
+        client.chat_postMessage(channel=channel_id, text=f"Worklog updated successfully for {issue_key}.")
+
         print("Worklog updated successfully.")
     else:
         #send a message to the user
@@ -219,3 +230,24 @@ def delete_worklog_by_id(text: list, slack_user_id: str, client: slack.WebClient
 def get_auth_from_redis(slack_user_id) -> dict:
     auth_stuff = json.loads(redis_conn.r.get(f'user:{slack_user_id}'))
     return auth_stuff
+
+def is_issue_assigned_to_user(issue_key: str, slack_user_id: str) -> bool:
+    auth_stuff = get_auth_from_redis(slack_user_id)
+
+    # user email
+    user_email = json.loads(auth_stuff)['user_email']
+
+    #api token
+    api_token = json.loads(auth_stuff)['jira_api_token']
+
+    # gather the issue data from jira
+    url = f'{jira_url}/rest/api/3/issue/{issue_key}'
+    authentication = HTTPBasicAuth(user_email, api_token)
+    response = requests.get(url, headers=headers, auth=authentication)
+    res = response.json()
+
+    # check if the user is the assignee
+    if res['fields']['assignee']['emailAddress'] == user_email:
+        return True
+    else:
+        return False
