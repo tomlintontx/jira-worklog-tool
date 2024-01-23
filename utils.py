@@ -7,6 +7,7 @@ import pytz
 from dateutil import parser
 import os
 from dotenv import load_dotenv
+import textwrap
 
 load_dotenv()
 
@@ -30,15 +31,22 @@ def find_patterns_bool(text: str) -> bool:
     return bool(re.search(pattern, text, flags=re.IGNORECASE))
 
 # make mono-spaced table for slack
-def make_tabular(events: list, client: slack.WebClient, user_id: str, table_format='github') -> str:
+def make_tabular(events: list, client: slack.WebClient, user_id: str, table_format='simple_grid') -> str:
     table = []
     for event in events:
         #convert start and end to local time
         tz = get_user_timezone(user_id, client)
         start = make_date_friendly(event['start_str'], tz)
         end = make_date_friendly(event['end'], tz)
-        table.append([event['summary'], event['jira_key'], start, end, f"{event['duration'] // 3600}:{(event['duration'] % 3600) // 60}"])
-    return tabulate(table, headers=['Summary', 'Jira Key', 'Start', 'End', 'Duration'], tablefmt=table_format)
+        table.append([
+            textwrap.fill(event['summary'], 15), 
+            textwrap.fill(event['description'].replace('\n', ' '), 25), 
+            event['jira_key'], 
+            start, 
+            end, 
+            f"{event['duration'] // 3600}:{(event['duration'] % 3600) // 60}"
+        ])
+    return tabulate(table, headers=['Summary', 'Description', 'Jira Key', 'Start', 'End', 'Duration'], tablefmt=table_format)
 
 def tabulate_dicts(array_of_dicts: list[dict], table_format='github') -> str:
     """

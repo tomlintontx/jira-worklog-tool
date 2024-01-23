@@ -28,12 +28,14 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
 
     # get calendar events from redis
     events = []
-    keys = ['event_id', 'jira_key', 'summary', 'start', 'duration', 'jira_worklog_id']
+    keys = ['event_id', 'jira_key', 'summary', 'start', 'duration', 'jira_worklog_id', 'description']
     for event_id in issue_keys:
         event_data = redis_conn.r.hmget(f'calEvent:{event_id}',keys)
         structured_event_data = dict(zip(keys, event_data))
         events.append(structured_event_data)
         gcal_event_ids.append(event_id)
+
+    print(f"worklog_id: {events[0]['jira_worklog_id']}")
 
     authentication = HTTPBasicAuth(auth_stuff['user_email'], auth_stuff['jira_api_token'])
 
@@ -196,7 +198,7 @@ def generate_worklog_entry(event: dict) -> dict:
             {
                 "content": [
                 {
-                    "text": event['summary'],
+                    "text": event['description'] if len(event['description']) > 0 else event['summary'],
                     "type": "text"
                 }
                 ],
@@ -291,3 +293,59 @@ def parse_isoformat_with_timezone(dt_str):
         # Insert a colon in the timezone part
         dt_str = dt_str[:-2] + ":" + dt_str[-2:]
     return datetime.datetime.fromisoformat(dt_str)
+
+def get_jira_issues_for_user(auth_stuff: dict, client: slack.WebClient, channel_id: str) -> None:
+    # Construct the API endpoint URL for creating a worklog
+    url = f'{jira_url}/rest/api/3/search'
+
+    # user email
+    user_email = json.loads(auth_stuff)['user_email']
+
+    #api token
+    api_token = json.loads(auth_stuff)['jira_api_token']
+
+    jql = f'assignee = "{user_email}" AND project = FES AND status in ("In Progress", "On Hold")'
+
+    authentication = HTTPBasicAuth(user_email, api_token)
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+
+    params = {
+        'jql': jql,
+        'fields': 'summary, key'
+    }
+
+    # Make the request
+    response = requests.get(url, headers=headers, params=params, auth=authentication)
+
+    # Check the response
+
+    if response.status_code == 200:
+        res = response.json()
+
+        if res['total'] == 0:
+            print("No issues found.")
+            client.chat_postMessage(channel=channel_id, text=f"No issues found for {user_email}.")
+            return ['No issues found.']
+
+        issues = []
+
+        for issue in res['issues']:
+            temp_dict = {
+                'issue_key': issue['key'],
+                'summary': issue['fields']['summary'],
+            }
+
+            issues.append(temp_dict)
+
+        print(f'Issues retrieved successfully. We found {len(issues)} issues.')
+
+        primer = f"Here are the issues for {user_email}:"
+        content = f'```{tabulate_dicts(issues)}```'
+
+        # Send a message to the user
+        client.chat_postMessage(channel=channel_id, text=primer)
+        client.chat_postMessage(channel=channel_id, text=content)

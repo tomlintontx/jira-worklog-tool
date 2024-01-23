@@ -14,6 +14,5 @@ r = redis.Redis(
   host=host,
   port=rport,
   password=redis_password,
-  ssl=True,
   decode_responses=True
 )

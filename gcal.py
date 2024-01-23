@@ -20,23 +20,43 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
     start_date = None
     end_date = None
     if (type(date_range) == list and date_range[0] == 'today') or (type(date_range) == str and date_range == 'today'):
+        new_date_range = 'today'
         start_date = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
         end_date = datetime.datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
     elif (type(date_range) == list and date_range[0] == 'yesterday') or (type(date_range) == str and date_range == 'yesterday'):
+        new_date_range = 'yesterday'
         start_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
         end_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
     elif date_range == 'next_seven_days':
+        new_date_range = 'next_seven_days'
         start_date = (datetime.datetime.utcnow() + datetime.timedelta(days=0)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
         end_date = (datetime.datetime.utcnow() + datetime.timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
     elif date_range == 'last_seven_days':
+        new_date_range = 'last_seven_days'
         start_date = (datetime.datetime.utcnow() - datetime.timedelta(days=8)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
         end_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
     elif type(date_range) == list and date_range[0] == 'next':
-        start_date = (datetime.datetime.utcnow() + datetime.timedelta(days=0)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-        end_date = (datetime.datetime.utcnow() + datetime.timedelta(days=int(date_range[1]))).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+        if date_range[1].isdigit():
+            new_date_range = date_range[0] + " " + date_range[1]
+            start_date = (datetime.datetime.utcnow() + datetime.timedelta(days=0)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
+            end_date = (datetime.datetime.utcnow() + datetime.timedelta(days=int(date_range[1]))).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+        else:
+            # Send a message to the user
+            client.chat_postMessage(channel=channel_id, text=f"Invalid date range. You provided {date_range[0]} {date_range[1]}")
+            return
     elif type(date_range) == list and date_range[0] == 'last':
-        start_date = (datetime.datetime.utcnow() - datetime.timedelta(days=int(date_range[1]))).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-        end_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+        if date_range[1].isdigit():
+            new_date_range = date_range[0] + " " + date_range[1]
+            start_date = (datetime.datetime.utcnow() - datetime.timedelta(days=int(date_range[1]))).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
+            end_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+        else:
+            # Send a message to the user
+            client.chat_postMessage(channel=channel_id, text=f"Invalid date range. You provided {date_range[0]} {date_range[1]}")
+            return
+    else:
+        # Send a message to the user
+        client.chat_postMessage(channel=channel_id, text=f"Invalid date range. You provided {date_range}")
+        return
 
     # save the start and end dates to redis by user_id as a hashset
     r.hset(f'user:{user_id}:dates', 'start_date', start_date)
@@ -82,6 +102,7 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
                 'jira_key': find_patterns(event['summary'].upper())[0],
                 'event_type': 'calendar',
                 'user_id': user_id,
+                'description': strip_description(event['description']) if 'description' in event else '',
             }
             fes_events.append(cleaned_event)
     
@@ -91,29 +112,38 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
 
     if len(fes_events) == 0:
         # Send a message to the user
-        client.chat_postMessage(channel=channel_id, text=f"You don't have any FES events today. Remember to add the JIRA issue key to the event title in your calendar. (Example: `FES-123: My event title`)")
+        client.chat_postMessage(channel=channel_id, text=f"You don't have any FES events for {new_date_range}. Remember to add the JIRA issue key to the event title in your calendar. (Example: `FES-123: My event title`)")
     else:
-        # Make a tabular representation of the events
-        tabular_events = make_tabular(fes_events, client, user_id)
+        # create a list of lists of events broken out by day
+        final_events = []
+        for event in fes_events:
+            if not final_events:
+                final_events.append([event])
+            else:
+                found = False
+                for day in final_events:
+                    if day[0]['start_str'][:10] == event['start_str'][:10]:
+                        day.append(event)
+                        found = True
+                if not found:
+                    final_events.append([event])
+        
+        final_events.sort(key=lambda day: day[0]['start_str'])
 
         event_ids = [event['event_id'] for event in fes_events]
+        
+        print(final_events)
+        client.chat_postMessage(channel=channel_id, text=f'Here\'s what I found in your calendar:')
 
-        # print(tabular_events)
+        for i in range(len(final_events)):
+            tabular_events = make_tabular(final_events[i], client, user_id)
+            message = f"```{tabular_events}```"
+            # send a message to the user
+            client.chat_postMessage(channel=channel_id, text=f"{final_events[i][0]['start_str'][:10]}:")
+            client.chat_postMessage(channel=channel_id, text=message)
 
-        message = f"```{tabular_events}```"
-
-        client.chat_postMessage(channel=channel_id, text='Here\'s what I found in your calendar:')
-        client.chat_postMessage(channel=channel_id, text=message)
+        # Send a message to the user
         client.chat_postMessage(channel=channel_id, blocks=send_confirmation_slack_message(event_ids))
-
-
-
-    # if not fes_events:
-    #     print('No upcoming events found.')
-    # else:
-    #     print('Upcoming events:')
-    #     for event in fes_events:
-    #         print(event)
 
 def store_events(events: list) -> None:
     for event in events:
@@ -129,3 +159,23 @@ def store_events(events: list) -> None:
             date = event.get("start_str")
             date_index = datetime.datetime.fromisoformat(date).strftime('%Y%m%d')
             r.zadd(f'user:{user_id}:calEvents', {event_id: date_index})
+
+def strip_description(description: str) -> str:
+    """
+    Strips the description to find the text between the start marker <<< and the end marker >>>
+
+    :param description: Description of a calendar event.
+    :return: Stripped description.
+    """
+    if not description:
+        return ""
+    
+    start_marker = "<<<"
+    end_marker = ">>>"
+    start_index = description.find(start_marker)
+    end_index = description.find(end_marker)
+
+    if start_index == -1 or end_index == -1:
+        return ""
+    
+    return description[start_index + len(start_marker):end_index].strip()
