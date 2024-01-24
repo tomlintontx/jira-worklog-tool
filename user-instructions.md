@@ -53,7 +53,7 @@ Before using the Jira Worklogs Tool, you need to authenticate it with your Googl
 - At the end of each day, you can run `/list-events today` to update what actually happened that day.
 
 ## Support
-For any issues or suggestions, please contact [Support Contact Information].
+For any issues or suggestions, please contact David Hogeg.
 
 ---
 
