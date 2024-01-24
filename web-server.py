@@ -140,7 +140,7 @@ async def list_events(background_tasks: BackgroundTasks, user_id: str = Form(...
         client.chat_postMessage(channel=channel_id, text=f"You haven't authorized me yet. Try running `/setup`")
         return Response(status_code=200)
     else:
-        background_tasks.add_task(get_events_gcal, user_id, google_token_url, google_client_id, google_client_secret, text, slack_token, auth_stuff, client, channel_id)
+        background_tasks.add_task(get_events_gcal, user_id, google_token_url, google_client_id, google_client_secret, text, auth_stuff, client, channel_id)
 
     return Response(status_code=200)
 
@@ -266,6 +266,11 @@ async def oauth2callback(request: Request):
     # get user email
     user_email = get_google_user_email(response.json().get('access_token'))
 
+    # get user timezone from slack
+    client = slack.WebClient(token=slack_token)
+    slack_res = client.users_info(user=user_id)
+    user_timezone = slack_res['user']['tz']
+
     # Process response
     access_token = {
         'access_token': response.json().get('access_token'),
@@ -273,6 +278,7 @@ async def oauth2callback(request: Request):
         'token_uri': google_token_url,
         'user_email': user_email,
         'jira_api_token': state_data.get('jira_api_token'),
+        'user_timezone': user_timezone,
     }
 
     # Save the access token and email in the database

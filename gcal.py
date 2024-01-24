@@ -1,12 +1,12 @@
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 import datetime
-from utils import ( find_patterns, find_patterns_bool, send_confirmation_slack_message, make_tabular )
+from utils import ( find_patterns, find_patterns_bool, send_confirmation_slack_message, make_tabular, convert_timezone, get_user_timezone )
 from redis_conn import r
 import json
 import slack
 
-async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id: str, google_client_secret: str, date_range: str, slack_token: str, auth_stuff: dict, client: slack.WebClient, channel_id: str) -> None:
+async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id: str, google_client_secret: str, date_range: str, auth_stuff: dict, client: slack.WebClient, channel_id: str) -> None:
 
     print('Getting events from Google Calendar...')
 
@@ -14,6 +14,8 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
         # Send a message to the user
         client.chat_postMessage(channel=channel_id, text=f"You haven't authorized me yet. Try running `/setup`")
         return
+    
+    auth_stuff = json.loads(auth_stuff) # convert string to dict
 
 
     # Determine start and end dates based on date_range
@@ -21,25 +23,25 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
     end_date = None
     if (type(date_range) == list and date_range[0] == 'today') or (type(date_range) == str and date_range == 'today'):
         new_date_range = 'today'
-        start_date = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-        end_date = datetime.datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+        start_date = convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_date = convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     elif (type(date_range) == list and date_range[0] == 'yesterday') or (type(date_range) == str and date_range == 'yesterday'):
         new_date_range = 'yesterday'
-        start_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-        end_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+        start_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) - datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     elif date_range == 'next_seven_days':
         new_date_range = 'next_seven_days'
-        start_date = (datetime.datetime.utcnow() + datetime.timedelta(days=0)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-        end_date = (datetime.datetime.utcnow() + datetime.timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+        start_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) + datetime.timedelta(days=0)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) + datetime.timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     elif date_range == 'last_seven_days':
         new_date_range = 'last_seven_days'
-        start_date = (datetime.datetime.utcnow() - datetime.timedelta(days=8)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-        end_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+        start_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) - datetime.timedelta(days=8)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     elif type(date_range) == list and date_range[0] == 'next':
         if date_range[1].isdigit():
             new_date_range = date_range[0] + " " + date_range[1]
-            start_date = (datetime.datetime.utcnow() + datetime.timedelta(days=0)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-            end_date = (datetime.datetime.utcnow() + datetime.timedelta(days=int(date_range[1]))).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+            start_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) + datetime.timedelta(days=0)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+            end_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) + datetime.timedelta(days=int(date_range[1]))).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         else:
             # Send a message to the user
             client.chat_postMessage(channel=channel_id, text=f"Invalid date range. You provided {date_range[0]} {date_range[1]}")
@@ -47,8 +49,8 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
     elif type(date_range) == list and date_range[0] == 'last':
         if date_range[1].isdigit():
             new_date_range = date_range[0] + " " + date_range[1]
-            start_date = (datetime.datetime.utcnow() - datetime.timedelta(days=int(date_range[1]))).replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-            end_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + 'Z'
+            start_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) - datetime.timedelta(days=int(date_range[1]))).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+            end_date = (convert_timezone(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone']) - datetime.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         else:
             # Send a message to the user
             client.chat_postMessage(channel=channel_id, text=f"Invalid date range. You provided {date_range[0]} {date_range[1]}")
@@ -61,8 +63,6 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
     # save the start and end dates to redis by user_id as a hashset
     r.hset(f'user:{user_id}:dates', 'start_date', start_date)
     r.hset(f'user:{user_id}:dates', 'end_date', end_date)
-
-    auth_stuff = json.loads(auth_stuff) # convert string to dict
 
     service = build('calendar', 'v3', credentials=Credentials(
         token=auth_stuff['access_token'],

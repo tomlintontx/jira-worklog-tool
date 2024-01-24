@@ -163,3 +163,11 @@ def get_user_timezone(user_id: str, client: slack.WebClient) -> str:
     tz_obj = pytz.timezone(res.data['user']['tz'])
 
     return tz_obj
+
+def convert_timezone(date: datetime, tz: pytz.timezone) -> datetime:
+    # Convert the date to the user's timezone
+    parsed_date = parser.parse(date)
+    tz_obj = pytz.timezone(tz)
+    parsed_date = parsed_date.astimezone(tz_obj)
+
+    return parsed_date
