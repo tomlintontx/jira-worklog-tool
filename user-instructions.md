@@ -33,6 +33,15 @@ Before using the Jira Worklogs Tool, you need to authenticate it with your Googl
 ### 4. `/get-my-open-issues`
 - **Description**: Returns a list of Jira issues assigned to you that are in an open or on-hold status.
 
+## Handling Specific Scenarios
+
+### What happens if you are added to a calendar invite that you are not the owner of?
+- **Action**: Edit the calendar invite and add the relevant FES number in the title. This will update only your calendar and allow you to log your time.
+
+### What happens if there are multiple FES resources on one calendar invite?
+- **Example Scenario**: A TAM adds a solution consultant to a meeting and includes their own FES number in the title.
+- **Solution**: The solution consultant should edit the calendar invite and add their FES number to the title, then save the invite. This updates only the solution consultant's calendar, allowing them to log time against their issue. If an attempt is made to log time against the wrong issue, the tool will prevent it and notify the user to either become the issue owner or change the issue number.
+
 ## Additional Information
 - This tool is designed to optimize your workflow and ensure accurate time tracking.
 - Regular updates and maintenance will be conducted to enhance its functionality.
@@ -43,4 +52,3 @@ For any issues or suggestions, please contact [Support Contact Information].
 ---
 
 Thank you for using Jira Worklogs Tool!
-
