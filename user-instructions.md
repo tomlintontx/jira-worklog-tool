@@ -23,6 +23,8 @@ Before using the Jira Worklogs Tool, you need to authenticate it with your Googl
     - Only allows logging time against issues you are assigned to.
     - Can rectify deleted calendar events.
     - Uses meeting title or description marked by `<<< >>>` as the Jira worklog comment.
+    - `next` is inclusive of the current date
+    - `last` is exlusive of the current date
 
 ### 2. `/get-worklogs [jira issue key]`
 - **Description**: Lists the worklogs for a specified Jira issue.
@@ -45,6 +47,10 @@ Before using the Jira Worklogs Tool, you need to authenticate it with your Googl
 ## Additional Information
 - This tool is designed to optimize your workflow and ensure accurate time tracking.
 - Regular updates and maintenance will be conducted to enhance its functionality.
+
+## Expectations of the FES Team Member
+- Please ensure to always forward log the next 7 days
+- At the end of each day, you can run `/list-events today` to update what actually happened that day.
 
 ## Support
 For any issues or suggestions, please contact [Support Contact Information].
