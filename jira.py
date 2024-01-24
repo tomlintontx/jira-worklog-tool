@@ -21,6 +21,18 @@ headers = {
 
 
 def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient, channel_id: str) -> None:
+    """
+    Creates worklogs for the given Jira issue keys.
+
+    Args:
+        issue_keys (list): List of Jira issue keys.
+        slack_user_id (str): Slack user ID.
+        client (slack.WebClient): Slack WebClient instance.
+        channel_id (str): Slack channel ID.
+
+    Returns:
+        None
+    """
 
     auth_stuff = get_auth_from_redis(slack_user_id)
 
@@ -102,6 +114,21 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
                 print("Response:", response.text)
 
 def get_issue_worklogs(issue_key: str, auth_stuff: dict, channel_id: str, client: slack.WebClient, user_id: str) -> None:
+    """
+    Retrieves worklogs for a specific Jira issue and sends them to a Slack channel.
+
+    Args:
+        issue_key (str): The key of the Jira issue.
+        auth_stuff (dict): A dictionary containing authentication information.
+        channel_id (str): The ID of the Slack channel to send the worklogs to.
+        client (slack.WebClient): The Slack WebClient instance.
+        user_id (str): The ID of the user making the request.
+
+    Returns:
+        None
+    """
+
+
     # Construct the API endpoint URL for creating a worklog
     url = f'{jira_url}/rest/api/3/issue/{issue_key}/worklog'
 
@@ -158,6 +185,21 @@ def get_issue_worklogs(issue_key: str, auth_stuff: dict, channel_id: str, client
         print("Response:", response.text)
 
 def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authentication: HTTPBasicAuth, event_id: str, client: slack.WebClient, channel_id: str) -> None:
+    """
+    Updates the worklog for a specific issue in Jira.
+
+    Args:
+        issue_key (str): The key of the issue.
+        worklog_id (str): The ID of the worklog to be updated.
+        worklog_data (dict): The data to be updated in the worklog.
+        authentication (HTTPBasicAuth): The authentication credentials for accessing the Jira API.
+        event_id (str): The ID of the associated calendar event.
+        client (slack.WebClient): The Slack WebClient instance for sending messages.
+        channel_id (str): The ID of the Slack channel to send messages to.
+
+    Returns:
+        None
+    """
     # Construct the API endpoint URL for creating a worklog
     url = f'{jira_url}/rest/api/3/issue/{issue_key}/worklog/{worklog_id}'
 
@@ -192,6 +234,16 @@ def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authenti
         print("Response:", response.text)
 
 def generate_worklog_entry(event: dict) -> dict:
+    """
+    Generate a worklog entry for a Jira issue based on the given event.
+
+    Args:
+        event (dict): The event containing information about the worklog entry.
+
+    Returns:
+        dict: The generated worklog entry.
+
+    """
     worklog_data = {
         "comment": {
             "content": [
@@ -222,6 +274,20 @@ def generate_worklog_entry(event: dict) -> dict:
     return worklog_entry
 
 def delete_worklog_by_id(text: list, slack_user_id: str, client: slack.WebClient, channel_id: str, auth_stuff: dict) -> None:
+    """
+    Deletes a worklog entry in Jira by its ID.
+
+    Args:
+        text (list): A list containing the issue key and worklog ID.
+        slack_user_id (str): The ID of the Slack user.
+        client (slack.WebClient): The Slack WebClient instance.
+        channel_id (str): The ID of the Slack channel.
+        auth_stuff (dict): A dictionary containing authentication information.
+
+    Returns:
+        None: This function does not return anything.
+    """
+    
     # get the worklog id
     worklog_id = text[1]
     issue_key = text[0]
@@ -260,6 +326,17 @@ def get_auth_from_redis(slack_user_id) -> dict:
     return auth_stuff
 
 def is_issue_assigned_to_user(issue_key: str, slack_user_id: str) -> bool:
+    """
+    Checks if the given Jira issue is assigned to the specified user.
+
+    Args:
+        issue_key (str): The key of the Jira issue.
+        slack_user_id (str): The ID of the Slack user.
+
+    Returns:
+        bool: True if the issue is assigned to the user, False otherwise.
+    """
+
     auth_stuff = get_auth_from_redis(slack_user_id)
 
     # user email
@@ -288,6 +365,16 @@ def is_issue_assigned_to_user(issue_key: str, slack_user_id: str) -> bool:
         return False
 
 def parse_isoformat_with_timezone(dt_str):
+    """
+    Parses a string representation of a datetime in ISO format with timezone.
+
+    Args:
+        dt_str (str): The string representation of the datetime.
+
+    Returns:
+        datetime.datetime: The parsed datetime object.
+
+    """
     # Check if the timezone part needs to be adjusted
     if dt_str[-3] not in [":", "+", "-"]:
         # Insert a colon in the timezone part
@@ -295,6 +382,19 @@ def parse_isoformat_with_timezone(dt_str):
     return datetime.datetime.fromisoformat(dt_str)
 
 def get_jira_issues_for_user(auth_stuff: dict, client: slack.WebClient, channel_id: str) -> None:
+    """
+    Retrieves Jira issues assigned to a specific user and sends them as messages to a Slack channel.
+
+    Args:
+        auth_stuff (dict): A dictionary containing authentication information, including user email and Jira API token.
+        client (slack.WebClient): An instance of the Slack WebClient for sending messages.
+        channel_id (str): The ID of the Slack channel to send the messages to.
+
+    Returns:
+        None
+    """
+
+
     # Construct the API endpoint URL for creating a worklog
     url = f'{jira_url}/rest/api/3/search'
 

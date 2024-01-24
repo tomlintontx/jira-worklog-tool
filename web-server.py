@@ -108,6 +108,18 @@ async def index():
 
 @app.post('/list-events')
 async def list_events(background_tasks: BackgroundTasks, user_id: str = Form(...), team_id: str = Form(...), text: str = Form(default='')):
+    """
+    Endpoint for listing events based on the provided date range or time period.
+
+    Args:
+        background_tasks (BackgroundTasks): Background tasks to be executed.
+        user_id (str): User ID.
+        team_id (str): Team ID.
+        text (str, optional): Text input for specifying the date range or time period. Defaults to ''.
+
+    Returns:
+        Response: HTTP response indicating the success of the request.
+    """
     auth_stuff = r.get(f'user:{user_id}')
     slack_token = r.get(f'team:{team_id}:slack_access_token')
     channel_id = open_dm_channel(user_id, slack_token)
@@ -146,6 +158,16 @@ async def list_events(background_tasks: BackgroundTasks, user_id: str = Form(...
 
 @app.post('/log-jira-worklog')
 async def log_time_in_jira(background_tasks: BackgroundTasks, request: Request):
+    """
+    Logs time in JIRA based on the user's action in Slack.
+
+    Args:
+        background_tasks (BackgroundTasks): Background tasks to be executed.
+        request (Request): The incoming request object.
+
+    Returns:
+        Response: The response object indicating the status of the request.
+    """
     form_data = await request.form()
     payload = json.loads(form_data.get("payload"))
     response_url = payload['response_url']
@@ -193,7 +215,17 @@ async def testes(request: Request):
 
 @app.post('/setup')
 async def setup(user_id: str = Form(...), text: str = Form(default=''), team_id: str = Form(...)):
+    """
+    Endpoint for setting up the JIRA integration.
 
+    Args:
+        user_id (str): The ID of the user.
+        text (str): The JIRA API token provided by the user. Defaults to an empty string.
+        team_id (str): The ID of the team.
+
+    Returns:
+        Response: The response object indicating the success of the setup process.
+    """
     slack_token = r.get(f'team:{team_id}:slack_access_token')
     channel_id = open_dm_channel(user_id, slack_token)
 
@@ -236,6 +268,15 @@ async def setup(user_id: str = Form(...), text: str = Form(default=''), team_id:
 
 @app.get('/oauth2callback')
 async def oauth2callback(request: Request):
+    """
+    Callback function for OAuth2 authentication.
+
+    Args:
+        request (Request): The incoming request object.
+
+    Returns:
+        HTMLResponse: The response containing the authentication success message.
+    """
 
     # Get the authorization code from the URL
     code = request.query_params['code']
@@ -307,6 +348,17 @@ async def oauth2callback(request: Request):
 
 @app.post('/get-worklogs')
 async def get_worklogs(user_id: str = Form(...), team_id: str = Form(...),text: str = Form(default='') ):
+    """
+    Retrieves worklogs for a JIRA issue and sends them to the user on Slack.
+
+    Parameters:
+    - user_id (str): The ID of the user making the request.
+    - team_id (str): The ID of the team associated with the user.
+    - text (str): The JIRA issue key.
+
+    Returns:
+    - Response: A response object indicating the status of the request.
+    """
     slack_token = r.get(f'team:{team_id}:slack_access_token')
     auth_stuff = r.get(f'user:{user_id}')
     channel_id = open_dm_channel(user_id, slack_token)
@@ -331,6 +383,17 @@ async def get_worklogs(user_id: str = Form(...), team_id: str = Form(...),text: 
 
 @app.post('/delete-worklog')
 async def delete_worklog(user_id: str = Form(...), team_id: str = Form(...), text: str = Form(default='')):
+    """
+    Deletes a worklog entry.
+
+    Parameters:
+    - user_id (str): The ID of the user making the request.
+    - team_id (str): The ID of the team associated with the user.
+    - text (str): The text payload containing the FES ticket number and worklog ID.
+
+    Returns:
+    - Response: The HTTP response indicating the status of the request.
+    """
     slack_token = r.get(f'team:{team_id}:slack_access_token')
     auth_stuff = r.get(f'user:{user_id}')
     channel_id = open_dm_channel(user_id, slack_token)
@@ -355,6 +418,17 @@ async def delete_worklog(user_id: str = Form(...), team_id: str = Form(...), tex
 
 @app.post('/get-my-open-issues')
 async def get_jira_issues_by_user(background_tasks: BackgroundTasks, user_id: str = Form(...), team_id: str = Form(...)):
+    """
+    Retrieves Jira issues for a specific user and sends them to the user's Slack channel.
+
+    Parameters:
+    - background_tasks (BackgroundTasks): Background tasks to be executed asynchronously.
+    - user_id (str): The ID of the user.
+    - team_id (str): The ID of the team.
+
+    Returns:
+    - Response: HTTP response indicating the status of the request.
+    """
     slack_token = r.get(f'team:{team_id}:slack_access_token')
     auth_stuff = r.get(f'user:{user_id}')
     channel_id = open_dm_channel(user_id, slack_token)

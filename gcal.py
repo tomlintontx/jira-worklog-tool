@@ -7,6 +7,23 @@ import json
 import slack
 
 async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id: str, google_client_secret: str, date_range: str, auth_stuff: dict, client: slack.WebClient, channel_id: str) -> None:
+    """
+    Retrieves events from Google Calendar based on the specified date range and filters them for FES events.
+    
+    Args:
+        user_id (str): The ID of the user.
+        google_token_uri (str): The URI for Google token authentication.
+        google_client_id (str): The client ID for Google authentication.
+        google_client_secret (str): The client secret for Google authentication.
+        date_range (str): The date range for retrieving events.
+        auth_stuff (dict): The authentication information for the user.
+        client (slack.WebClient): The Slack WebClient instance.
+        channel_id (str): The ID of the Slack channel to post messages to.
+    
+    Returns:
+        None
+    """
+        
 
     print('Getting events from Google Calendar...')
 
@@ -145,7 +162,18 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
         # Send a message to the user
         client.chat_postMessage(channel=channel_id, blocks=send_confirmation_slack_message(event_ids))
 
+import datetime
+
 def store_events(events: list) -> None:
+    """
+    Store events in Redis database.
+
+    Args:
+        events (list): List of events to be stored.
+
+    Returns:
+        None
+    """
     for event in events:
         event_id = event.get("event_id")  # Assuming each event has a unique 'id' field
         if event_id:
