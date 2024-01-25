@@ -110,7 +110,7 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
                 redis_conn.r.hset(f'calEvent:{event["event_id"]}', 'jira_worklog_id', int(worklog_id))
 
                 # add issue to successful worklogs
-                successes.append(f"{event['jira_key']} (worklog_id: {event['jira_worklog_id']})")
+                successes.append(f"{event['jira_key']} (worklog_id: {worklog_id})")
 
                 logger.info(f"Worklog { worklog_id } for jira issue { event['jira_key'] } created successfully for user {auth_stuff['user_email']}.")
             else:
