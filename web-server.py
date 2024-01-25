@@ -14,6 +14,9 @@ import threading
 from redis_conn import r
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',filename='slackbot.log')
 
 load_dotenv()   
 

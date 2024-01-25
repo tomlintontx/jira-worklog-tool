@@ -7,10 +7,11 @@ import redis_conn
 import slack
 from utils import tabulate_dicts, make_date_friendly, get_user_timezone
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
-
-test_email = 'thomas.linton@sisense.com'
 
 jira_url = os.environ.get('JIRA_BASE_URL')
 
@@ -47,20 +48,15 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
         events.append(structured_event_data)
         gcal_event_ids.append(event_id)
 
-    print(f"worklog_id: {events[0]['jira_worklog_id']}")
-
     authentication = HTTPBasicAuth(auth_stuff['user_email'], auth_stuff['jira_api_token'])
 
     #get the min and max dates form redis
-    min_date = datetime.datetime.fromisoformat(redis_conn.r.hget(f'user:{slack_user_id}:dates', 'start_date')[:-1] + '+00:00')
-    max_date = datetime.datetime.fromisoformat(redis_conn.r.hget(f'user:{slack_user_id}:dates', 'end_date')[:-1] + '+00:00')
+    min_date = datetime.datetime.fromisoformat(redis_conn.r.hget(f'user:{slack_user_id}:dates', 'start_date'))
+    max_date = datetime.datetime.fromisoformat(redis_conn.r.hget(f'user:{slack_user_id}:dates', 'end_date'))
 
 
     # get list of stored events YYYMMDD between start and end from redis
     stored_events = redis_conn.r.zrangebyscore(f'user:{slack_user_id}:calEvents', min_date.strftime('%Y%m%d'), max_date.strftime('%Y%m%d'))
-
-    # print stored events
-    print(f'stored_events: {stored_events}')
 
     # compare stored events and gcal events to see if any are missing
     for event in stored_events:
@@ -68,19 +64,29 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
             # delete the worklog and cal event from redis
             worklog_id = redis_conn.r.hget(f'calEvent:{event}', 'jira_worklog_id')
             c = redis_conn.r.delete(f'calEvent:{event}')
-            print(f'calEvent:{event} deleted: {c}')
             redis_conn.r.delete(f'worklog:{worklog_id}')
             redis_conn.r.zrem(f'user:{slack_user_id}:calEvents', event)
+
+    # successful worklog creations
+    successes = []
+    update_successes = []
 
     # Make the request
     for event in events:
         # check to see if the issue is assigned to the user
         if not is_issue_assigned_to_user(event['jira_key'], slack_user_id):
             client.chat_postMessage(channel=channel_id, text=f":x: You are not assigned to `{event['jira_key']}`. Please assign yourself to the issue and try again or update your google calendar with the correct Jira Key.")
+            logger.info(f"User {auth_stuff['user_email']} is not assigned to {event['jira_key']}. Time will not be logged for this issue.")
             continue
 
         if event.get('jira_worklog_id') is not None:
-            update_worklog(event['jira_key'], event['jira_worklog_id'], generate_worklog_entry(event)['worklog_data'], authentication, event['event_id'], client, channel_id)
+            update_res = update_worklog(event['jira_key'], event['jira_worklog_id'], generate_worklog_entry(event)['worklog_data'], authentication, event['event_id'], client, channel_id)
+            if update_res:
+                update_successes.append(f"{event['jira_key']} (worklog_id: {event['jira_worklog_id']})")
+                logger.info(f"Worklog { event['jira_worklog_id'] } for jira issue { event['jira_key'] } updated successfully for user {auth_stuff['user_email']}.")
+            else:
+                continue   
+
         else:
             
             # Construct the API endpoint URL for creating a worklog
@@ -103,15 +109,21 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
                 # Update the Calendar event with the worklog ID
                 redis_conn.r.hset(f'calEvent:{event["event_id"]}', 'jira_worklog_id', int(worklog_id))
 
-                # send a message to the user
-                client.chat_postMessage(channel=channel_id, text=f":white_check_mark: Worklog created successfully for {event['jira_key']}.")
+                # add issue to successful worklogs
+                successes.append(f"{event['jira_key']} (worklog_id: {event['jira_worklog_id']})")
 
-                print("Worklog created successfully.")
+                logger.info(f"Worklog { worklog_id } for jira issue { event['jira_key'] } created successfully for user {auth_stuff['user_email']}.")
             else:
                 #send a message to the user
                 client.chat_postMessage(channel=channel_id, text=f":x: Failed to create worklog for {event['jira_key']}. \n Jira responded with: {response.text}")
-                print("Failed to create worklog.")
-                print("Response:", response.text)
+                logger.info(f"Failed to create worklog for {event['jira_key']}. \n Jira responded with: {response.text}")
+
+    # todo: send message with all worklogs created
+    if len(successes) > 0:
+        client.chat_postMessage(channel=channel_id, text=f":white_check_mark: Worklogs created successfully for {', '.join(successes)}.")
+
+    if len(update_successes) > 0:
+        client.chat_postMessage(channel=channel_id, text=f":white_check_mark: Worklogs updated successfully for {', '.join(update_successes)}.")
 
 def get_issue_worklogs(issue_key: str, auth_stuff: dict, channel_id: str, client: slack.WebClient, user_id: str) -> None:
     """
@@ -149,7 +161,7 @@ def get_issue_worklogs(issue_key: str, auth_stuff: dict, channel_id: str, client
         res = response.json()
 
         if res['total'] == 0:
-            print("No worklogs found.")
+            logger.info(f"No worklogs found for {issue_key}.")
             client.chat_postMessage(channel=channel_id, text=f"No worklogs found for {issue_key}.")
             return ['No worklogs found.']
 
@@ -169,7 +181,7 @@ def get_issue_worklogs(issue_key: str, auth_stuff: dict, channel_id: str, client
 
             worklogs.append(temp_dict)
 
-        print(f'Worklogs retrieved successfully. We found {len(worklogs)} worklogs.')
+        logger.info(f'Worklogs retrieved successfully. We found {len(worklogs)} worklogs for user {user_email}.')
 
         primer = f"Here are the worklogs for {issue_key.upper()}:"
         content = f'```{tabulate_dicts(worklogs)}```'
@@ -182,9 +194,9 @@ def get_issue_worklogs(issue_key: str, auth_stuff: dict, channel_id: str, client
         res = response.json()
         # Send a message to the user
         client.chat_postMessage(channel=channel_id, text=f"Failed to retrieve worklogs for {issue_key.upper()}.\n Response from Jira: {res['errorMessages'][0]}")
-        print("Response:", response.text)
+        logger.info(f"Failed to retrieve worklogs for {issue_key.upper()}.\n Response from Jira: {res['errorMessages'][0]}")
 
-def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authentication: HTTPBasicAuth, event_id: str, client: slack.WebClient, channel_id: str) -> None:
+def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authentication: HTTPBasicAuth, event_id: str, client: slack.WebClient, channel_id: str) -> bool:
     """
     Updates the worklog for a specific issue in Jira.
 
@@ -223,15 +235,15 @@ def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authenti
         for key, value in cal_update.items():
             redis_conn.r.hset(f'calEvent:{event_id}', key, value)
 
-        # send a message to the user
-        client.chat_postMessage(channel=channel_id, text=f":white_check_mark: Worklog updated successfully for {issue_key}.")
-
-        print("Worklog updated successfully.")
+        # return success
+        return True
+    
     else:
         #send a message to the user
         client.chat_postMessage(channel=channel_id, text=f"Failed to update worklog for {issue_key}. \n Jira responded with: {response.text}")
         print("Failed to update worklog.")
         print("Response:", response.text)
+        return False
 
 def generate_worklog_entry(event: dict) -> dict:
     """
@@ -309,7 +321,7 @@ def delete_worklog_by_id(text: list, slack_user_id: str, client: slack.WebClient
 
     # Check the response
     if response.status_code == 204:
-        print("Worklog deleted successfully.")
+        logger.info(f"Worklog { worklog_id } for jira issue { issue_key } deleted successfully for user {user_email}.")
         redis_conn.r.delete(f'worklog:{worklog_id}')
         redis_conn.r.hdel(f'calEvent:{event_id}', 'jira_worklog_id')
 
@@ -318,8 +330,7 @@ def delete_worklog_by_id(text: list, slack_user_id: str, client: slack.WebClient
     else:
         # send a message to the user
         client.chat_postMessage(channel=channel_id, text=f"Failed to delete worklog.")
-        print("Failed to delete worklog.")
-        print("Response:", response.text)
+        logger.info(f"Failed to delete worklog for {issue_key}. \n Jira responded with: {response.text}")
 
 def get_auth_from_redis(slack_user_id) -> dict:
     auth_stuff = json.loads(redis_conn.r.get(f'user:{slack_user_id}'))
@@ -354,8 +365,6 @@ def is_issue_assigned_to_user(issue_key: str, slack_user_id: str) -> bool:
     params = {'fields': fields}
     response = requests.get(url, headers=headers, auth=authentication, params=params)
     res = response.json()
-
-    print(res)
 
     # check if the user is the assignee
     if type(res['fields']['assignee']) == dict:
@@ -427,7 +436,7 @@ def get_jira_issues_for_user(auth_stuff: dict, client: slack.WebClient, channel_
         res = response.json()
 
         if res['total'] == 0:
-            print("No issues found.")
+            logger.info(f"No issues found for {user_email}.")
             client.chat_postMessage(channel=channel_id, text=f"No issues found for {user_email}.")
             return ['No issues found.']
 
@@ -441,7 +450,7 @@ def get_jira_issues_for_user(auth_stuff: dict, client: slack.WebClient, channel_
 
             issues.append(temp_dict)
 
-        print(f'Issues retrieved successfully. We found {len(issues)} issues.')
+        logger.info(f'Issues retrieved successfully. We found {len(issues)} issues for user {user_email}.')
 
         primer = f"Here are the issues for {user_email}:"
         content = f'```{tabulate_dicts(issues)}```'

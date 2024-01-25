@@ -5,6 +5,9 @@ from utils import ( find_patterns, find_patterns_bool, send_confirmation_slack_m
 from redis_conn import r
 import json
 import slack
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id: str, google_client_secret: str, date_range: str, auth_stuff: dict, client: slack.WebClient, channel_id: str) -> None:
     """
@@ -92,7 +95,7 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
     search_string = "FES"
 
     # Call the Calendar API
-    print('Getting todays events...')
+    logger.info(f'Getting the {search_string} events')
     events_result = service.events().list(calendarId='primary', timeMin=start_date, timeMax=end_date,
                                         singleEvents=True, q=search_string).execute()
     # get items from events_result
@@ -125,11 +128,12 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
     
     store_events(fes_events)
 
-    print(f'Found {len(fes_events)} events')
+    logger.info(f'Found {len(fes_events)} events')
 
     if len(fes_events) == 0:
         # Send a message to the user
         client.chat_postMessage(channel=channel_id, text=f"You don't have any FES events for {new_date_range}. Remember to add the JIRA issue key to the event title in your calendar. (Example: `FES-123: My event title`)")
+        logger.info(f'No events found for {new_date_range} for user {auth_stuff["user_email"]}')
     else:
         # create a list of lists of events broken out by day
         final_events = []
@@ -149,7 +153,6 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
 
         event_ids = [event['event_id'] for event in fes_events]
         
-        print(final_events)
         client.chat_postMessage(channel=channel_id, text=f'Here\'s what I found in your calendar:')
 
         for i in range(len(final_events)):
@@ -161,8 +164,6 @@ async def get_events_gcal(user_id: str, google_token_uri: str, google_client_id:
 
         # Send a message to the user
         client.chat_postMessage(channel=channel_id, blocks=send_confirmation_slack_message(event_ids))
-
-import datetime
 
 def store_events(events: list) -> None:
     """
