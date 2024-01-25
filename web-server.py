@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Form, BackgroundTasks, Response, responses
 from gcal import get_events_gcal
 import slack
-from utils import get_google_user_email, open_dm_channel, create_authorize_me_button
+from utils import get_google_user_email, open_dm_channel, create_authorize_me_button, get_capacity_from_redis
 import json
 import requests
 import urllib.parse
@@ -452,6 +452,26 @@ async def get_jira_issues_by_user(background_tasks: BackgroundTasks, user_id: st
         client.chat_postMessage(channel=channel_id, text=f"Getting your open issues...")
 
     return Response(status_code=200)
+
+@app.post('/show-my-logged-time')
+async def show_capacity(background_tasks: BackgroundTasks, user_id: str = Form(...), team_id: str = Form(...)):
+    slack_token = r.get(f'team:{team_id}:slack_access_token')
+    auth_stuff = r.get(f'user:{user_id}')
+    channel_id = open_dm_channel(user_id, slack_token)
+    client = slack.WebClient(token=slack_token)
+
+    if auth_stuff is None:
+        # Send a message to the user
+        client.chat_postMessage(channel=channel_id, text=f"You haven't authorized me yet. Try running `/setup`")
+        return Response(status_code=200)
+    else:
+        # get text payload
+        background_tasks.add_task(get_capacity_from_redis, user_id, client, channel_id, auth_stuff)
+        # send message to user
+        client.chat_postMessage(channel=channel_id, text=f"Getting your logged time...")
+    
+    return Response(status_code=200)
+
 
 if __name__ == "__main__":
     import uvicorn

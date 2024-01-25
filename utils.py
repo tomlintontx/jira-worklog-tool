@@ -8,6 +8,8 @@ from dateutil import parser
 import os
 from dotenv import load_dotenv
 import textwrap
+from redis_conn import r
+import json
 
 load_dotenv()
 
@@ -265,7 +267,7 @@ def get_user_timezone(user_id: str, client: slack.WebClient) -> str:
 
     return tz_obj
 
-def convert_timezone(date: datetime, tz: pytz.timezone) -> datetime:
+def convert_timezone(date: str, tz: pytz.timezone) -> datetime:
     """
     Converts a given date to the specified timezone.
 
@@ -318,3 +320,46 @@ def create_authorize_me_button(auth_url) -> list:
     ]
 
     return message_payload
+
+def get_capacity_from_redis(slack_user_id: str, client: slack.WebClient, channel_id: str, auth_stuff: dict):
+    auth_stuff = json.loads(auth_stuff)
+
+    start_date = convert_timezone(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone'])
+    end_date = (convert_timezone(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff["user_timezone"]) + datetime.timedelta(days=7))
+
+    #create dates in between start and end date
+
+    dates = [start_date + datetime.timedelta(days=x) for x in range(0, (end_date-start_date).days)]
+
+    capacity = {}
+    for dt in dates:
+        capacity[dt.strftime("%Y-%m-%d")] = 0
+
+    event_ids = r.zrangebyscore(f'user:{slack_user_id}:calEvents', start_date.strftime("%Y%m%d"), end_date.strftime("%Y%m%d"))
+
+    events=[]
+
+    for event in event_ids:
+        events.append(r.hgetall(f"calEvent:{event}"))
+
+    # loop through events and create a dict with date as key and duration as value
+
+    for event in events:
+        date = event['start'][:10]
+        if date not in capacity:
+            capacity[date] = int(event['duration'])
+        else:
+            capacity[date] += int(event['duration'])
+
+    for key,item in capacity.items():
+        hours = item // 3600
+        minutes = item % 3600 // 60
+        formatted_time = f"{hours}:{minutes}"
+        capacity[key] = formatted_time
+
+    # order keys in dict
+    capacity = dict(sorted(capacity.items()))
+
+    message = tabulate_dicts([capacity],table_format='simple_grid')
+
+    client.chat_postMessage(channel=channel_id, text=f"```{ message }```")

@@ -63,7 +63,7 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
         if event not in gcal_event_ids:
             # delete the worklog and cal event from redis
             worklog_id = redis_conn.r.hget(f'calEvent:{event}', 'jira_worklog_id')
-            c = redis_conn.r.delete(f'calEvent:{event}')
+            redis_conn.r.delete(f'calEvent:{event}')
             redis_conn.r.delete(f'worklog:{worklog_id}')
             redis_conn.r.zrem(f'user:{slack_user_id}:calEvents', event)
 
