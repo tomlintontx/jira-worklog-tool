@@ -281,3 +281,40 @@ def convert_timezone(date: datetime, tz: pytz.timezone) -> datetime:
     parsed_date = parsed_date.astimezone(tz_obj)
 
     return parsed_date
+
+def create_authorize_me_button(auth_url) -> list:
+    """
+    Creates a button that redirects the user to the authorization page.
+
+    Args:
+        auth_url (str): The authorization URL.
+
+    Returns:
+        list: The Slack message payload in the required format.
+    """
+    message_payload = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Please authorize me to access your Google Calendar."
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [            
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Authorize Me"
+                    },
+                    "url": auth_url,
+                    "action_id": "authorize_me",
+                    "style": "primary"
+                }
+            ]
+        }
+    ]
+
+    return message_payload
