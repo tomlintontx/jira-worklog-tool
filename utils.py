@@ -321,11 +321,34 @@ def create_authorize_me_button(auth_url) -> list:
 
     return message_payload
 
-def get_capacity_from_redis(slack_user_id: str, client: slack.WebClient, channel_id: str, auth_stuff: dict):
+def get_capacity_from_redis(slack_user_id: str, client: slack.WebClient, channel_id: str, auth_stuff: dict, text: list):
     auth_stuff = json.loads(auth_stuff)
 
-    start_date = convert_timezone(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone'])
-    end_date = (convert_timezone(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff["user_timezone"]) + datetime.timedelta(days=7))
+    start_date= None
+    end_date= None
+
+    if len(text) > 1:
+        if text[0] == 'this':
+            # set start and end dates to this week (monday to sunday)
+            start_date = convert_timezone(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone'])
+            # Set start_date to Monday
+            start_date -= datetime.timedelta(days=start_date.weekday())
+            end_date = (start_date + datetime.timedelta(days=7))
+        elif text[0] == 'next':
+            # set start and end dates to next week (monday to sunday)
+            start_date = convert_timezone(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone'])
+            # Set start_date to next Monday
+            start_date += datetime.timedelta(days=-start_date.weekday(), weeks=1)
+            end_date = (start_date + datetime.timedelta(days=7))
+        elif text[0] == 'last':
+            # set start and end dates to last week (monday to sunday)
+            start_date = convert_timezone(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f%z'), auth_stuff['user_timezone'])
+            # Set start_date to last Monday
+            start_date += datetime.timedelta(days=-start_date.weekday(), weeks=-1)
+            end_date = (start_date + datetime.timedelta(days=7))
+        else:
+            # send a message saying that the command is invalid
+            client.chat_postMessage(channel=channel_id, text=f"```Invalid command. Please try again.```")
 
     #create dates in between start and end date
 
