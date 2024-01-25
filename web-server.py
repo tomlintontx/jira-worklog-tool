@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Form, BackgroundTasks, Response, responses
 from gcal import get_events_gcal
 import slack
-from utils import get_google_user_email, open_dm_channel
+from utils import get_google_user_email, open_dm_channel, create_authorize_me_button
 import json
 import requests
 import urllib.parse
@@ -191,6 +191,8 @@ async def log_time_in_jira(background_tasks: BackgroundTasks, request: Request):
     elif action_id == 'update_jira_no':
         # Handle 'No' action
         response_text = ":x: JIRA worklogs will not be updated."
+    elif action_id == 'authorize_me':
+        response_text = "Authorizing you..."
     else:
         response_text = "Unknown action."
 
@@ -263,9 +265,11 @@ async def setup(user_id: str = Form(...), text: str = Form(default=''), team_id:
 
     auth_url = google_auth_base_url + '?' + urllib.parse.urlencode(params)
 
+    message = create_authorize_me_button(auth_url)
+
     # Send the user a link to the Google Auth page
     client = slack.WebClient(token=slack_token)
-    client.chat_postMessage(channel=channel_id, text=f"Click here to authorize: {auth_url}")
+    client.chat_postMessage(channel=channel_id, blocks=message)
 
     return Response(status_code=200)
 
