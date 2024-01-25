@@ -35,6 +35,9 @@ Before using the Jira Worklogs Tool, you need to authenticate it with your Googl
 ### 4. `/get-my-open-issues`
 - **Description**: Returns a list of Jira issues assigned to you that are in an open or on-hold status.
 
+### 5. `/show-my-logged-time [this/next/last] [week]`
+- **Description**: Returns a table that shows time logged by day for the time period requested.
+
 ## Handling Specific Scenarios
 
 ### What happens if you are added to a calendar invite that you are not the owner of?
