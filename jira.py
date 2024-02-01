@@ -8,6 +8,7 @@ import slack
 from utils import tabulate_dicts, make_date_friendly, get_user_timezone
 import datetime
 import logging
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
 
     gcal_event_ids = []
 
+    # get user tz
+    user_tz = pytz.timezone(auth_stuff['user_timezone'])
+
     # get calendar events from redis
     events = []
     keys = ['event_id', 'jira_key', 'summary', 'start', 'duration', 'jira_worklog_id', 'description']
@@ -61,11 +65,24 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
     # compare stored events and gcal events to see if any are missing
     for event in stored_events:
         if event not in gcal_event_ids:
+            calendar_summary = redis_conn.r.hget(f'calEvent:{event}', 'summary')
+            calendar_start = redis_conn.r.hget(f'calEvent:{event}', 'start')
+            logger.info(f"Event {event} is missing from the list of events to be logged. Deleting from redis and Jira.")
             # delete the worklog and cal event from redis
             worklog_id = redis_conn.r.hget(f'calEvent:{event}', 'jira_worklog_id')
+            issue_key = redis_conn.r.hget(f'calEvent:{event}', 'jira_key')
             redis_conn.r.delete(f'calEvent:{event}')
             redis_conn.r.delete(f'worklog:{worklog_id}')
             redis_conn.r.zrem(f'user:{slack_user_id}:calEvents', event)
+
+            # delete the worklog from jira
+            url = f'{jira_url}/rest/api/3/issue/{issue_key}/worklog/{worklog_id}'
+            response = requests.delete(url, headers=headers, auth=authentication)
+            logger.info(f"Worklog { worklog_id } for jira issue { issue_key } deleted successfully for user {auth_stuff['user_email']}.")
+
+            # send a message to the user
+            client.chat_postMessage(channel=channel_id, text=f"Worklog for calendar invite `{calendar_summary}` scheduled for `{make_date_friendly(calendar_start,user_tz)}` was deleted because you \
+                                    previously logged time for this event, but it's no longer on your calendar for this date range.")
 
     # successful worklog creations
     successes = []
@@ -79,16 +96,15 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
             logger.info(f"User {auth_stuff['user_email']} is not assigned to {event['jira_key']}. Time will not be logged for this issue.")
             continue
 
-        if event.get('jira_worklog_id') is not None:
-            update_res = update_worklog(event['jira_key'], event['jira_worklog_id'], generate_worklog_entry(event)['worklog_data'], authentication, event['event_id'], client, channel_id)
+        try:   
+            worklog_id = int(event['jira_worklog_id'])
+            update_res = update_worklog(event['jira_key'], worklog_id, generate_worklog_entry(event)['worklog_data'], authentication, event['event_id'], client, channel_id, slack_user_id)
             if update_res:
                 update_successes.append(f"{event['jira_key']} (worklog_id: {event['jira_worklog_id']})")
                 logger.info(f"Worklog { event['jira_worklog_id'] } for jira issue { event['jira_key'] } updated successfully for user {auth_stuff['user_email']}.")
             else:
                 continue   
-
-        else:
-            
+        except TypeError:
             # Construct the API endpoint URL for creating a worklog
             url = f'{jira_url}/rest/api/3/issue/{event["jira_key"]}/worklog'
             worklog_entry = generate_worklog_entry(event)
@@ -116,8 +132,11 @@ def create_worklog(issue_keys: list, slack_user_id: str, client: slack.WebClient
             else:
                 #send a message to the user
                 client.chat_postMessage(channel=channel_id, text=f":x: Failed to create worklog for {event['jira_key']}. \n Jira responded with: {response.text}")
-                logger.info(f"Failed to create worklog for {event['jira_key']}. \n Jira responded with: {response.text}")
+                logger.error(f"Failed to create worklog for {event['jira_key']}. \n Jira responded with: {response.text}")
 
+        finally:
+            pass
+            
     # todo: send message with all worklogs created
     if len(successes) > 0:
         client.chat_postMessage(channel=channel_id, text=f":white_check_mark: Worklogs created successfully for {', '.join(successes)}.")
@@ -196,7 +215,7 @@ def get_issue_worklogs(issue_key: str, auth_stuff: dict, channel_id: str, client
         client.chat_postMessage(channel=channel_id, text=f"Failed to retrieve worklogs for {issue_key.upper()}.\n Response from Jira: {res['errorMessages'][0]}")
         logger.info(f"Failed to retrieve worklogs for {issue_key.upper()}.\n Response from Jira: {res['errorMessages'][0]}")
 
-def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authentication: HTTPBasicAuth, event_id: str, client: slack.WebClient, channel_id: str) -> bool:
+def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authentication: HTTPBasicAuth, event_id: str, client: slack.WebClient, channel_id: str, user: str) -> bool:
     """
     Updates the worklog for a specific issue in Jira.
 
@@ -239,8 +258,29 @@ def update_worklog(issue_key: str, worklog_id: str, worklog_data: dict, authenti
         return True
     
     else:
+        # delete the cal event and worklog from redis
+        redis_conn.r.delete(f'calEvent:{event_id}')
+        redis_conn.r.delete(f'worklog:{worklog_id}')
+
+        #delete worklog in jira
+        url = f'{jira_url}/rest/api/3/issue/{issue_key}/worklog/{worklog_id}'
+        del_res = requests.delete(url, headers=headers, auth=authentication)
+
+        if del_res.status_code == 204:
+            logger.info(f"Worklog { worklog_id } for jira issue { issue_key } deleted successfully.")
+        else:
+            logger.info(f"Failed to delete worklog { worklog_id } for jira issue { issue_key }. It probably doesn't exist.")
+
+
         #send a message to the user
-        client.chat_postMessage(channel=channel_id, text=f"Failed to update worklog for {issue_key}. \n Jira responded with: {response.text}")
+        client.chat_postMessage(channel=channel_id, text=f"Failed to update worklog for {issue_key}. I've cleared the database for that calendar event, try it again.")
+        logger.error(f"Failed to update worklog for {issue_key}. \n Jira responded with: {response.text}")
+        logger.error(f"Worklog data: {worklog_data}")
+        logger.error(f"Worklog ID: {worklog_id}")
+        logger.error(f"Event ID: {event_id}")
+        logger.error(f"url: {url}")
+        logger.error(f"issue_key: {issue_key}")
+        logger.error(f"user: {user}")
         print("Failed to update worklog.")
         print("Response:", response.text)
         return False
@@ -323,7 +363,7 @@ def delete_worklog_by_id(text: list, slack_user_id: str, client: slack.WebClient
     if response.status_code == 204:
         logger.info(f"Worklog { worklog_id } for jira issue { issue_key } deleted successfully for user {user_email}.")
         redis_conn.r.delete(f'worklog:{worklog_id}')
-        redis_conn.r.hdel(f'calEvent:{event_id}', 'jira_worklog_id')
+        redis_conn.r.delete(f'calEvent:{event_id}')
 
         #send a message to the user
         client.chat_postMessage(channel=channel_id, text=f"Worklog deleted successfully.")  

@@ -132,18 +132,18 @@ async def list_events(background_tasks: BackgroundTasks, user_id: str = Form(...
 
     if len(text) == 0:
         # Send a message to the user
-        client.chat_postMessage(channel=channel_id, text=f"Please provide a date range. Valid options are: `today`, `yesterday`, `next_seven_days`, `last_seven_days`")
+        client.chat_postMessage(channel=channel_id, text=f"Please provide a date range. Valid options are: `today`, `yesterday`, `next <number of days>`, `last <number of days>`")
         return Response(status_code=200)
 
-    if len(text) == 1 and text[0] not in ['today', 'yesterday', 'next_seven_days', 'last_seven_days']:
+    if len(text) == 1 and text[0] not in ['today', 'yesterday']:
         # Send a message to the user
-        client.chat_postMessage(channel=channel_id, text=f"Please provide a time period. Valid options are: `today`, `yesterday`, `next_seven_days`, `last_seven_days`")
+        client.chat_postMessage(channel=channel_id, text=f"Please provide a time period. Valid options are: `today`, `yesterday`, `next <number of days>`, `last <number of days>`")
         return Response(status_code=200)
     elif len(text) == 2 and text[0] not in ['next', 'last']:
         # Send a message to the user
-        client.chat_postMessage(channel=channel_id, text=f"Please provide a time period. Valid options are: `next <number of days>`, `last <number of days>`")
+        client.chat_postMessage(channel=channel_id, text=f"Please provide a time period. Valid options are: `today`, `yesterday`, `next <number of days>`, `last <number of days>`")
         return Response(status_code=200)
-    elif len(text) == 1 and text[0] in ['today', 'yesterday', 'next_seven_days', 'last_seven_days']:
+    elif len(text) == 1 and text[0] in ['today', 'yesterday']:
         # send user a message
         client.chat_postMessage(channel=channel_id, text=f"Getting events for { text[0] }...")
     elif len(text) == 2 and text[0] in ['next', 'last']:
